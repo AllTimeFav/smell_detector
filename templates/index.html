@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>C++ Anti-Pattern Detector</title>
+    
+    <!-- Fonts: Inter for UI, JetBrains Mono for Code -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Highlight.js -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="highlight-theme">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cpp.min.js"></script>
+
+    <style>
+        /* Base Variables (Dark Theme Default - Zinc Scale) */
+        :root {
+            --bg-base: #09090b;
+            --bg-panel: #18181b;
+            --bg-hover: #27272a;
+            --border-color: #27272a;
+            --border-light: rgba(255, 255, 255, 0.05);
+            
+            --text-primary: #fafafa;
+            --text-secondary: #a1a1aa;
+            --text-muted: #71717a;
+            
+            --accent-primary: #fafafa;
+            
+            /* Semantic Colors (Dark) */
+            --crit-bg: #450a0a;
+            --crit-text: #fca5a5;
+            --crit-border: #7f1d1d;
+            
+            --warn-bg: #422006;
+            --warn-text: #fdba74;
+            --warn-border: #7c2d12;
+            
+            --info-bg: #1e1b4b;
+            --info-text: #93c5fd;
+            --info-border: #1e3a8a;
+
+            /* Code Inspector Variables */
+            --code-bg: #09090b;
+            --gutter-bg: #18181b;
+            --gutter-border: #27272a;
+        }
+
+        /* Light Theme Variables */
+        body.light-theme {
+            --bg-base: #f4f4f5;
+            --bg-panel: #ffffff;
+            --bg-hover: #f4f4f5;
+            --border-color: #e4e4e7;
+            --border-light: rgba(0, 0, 0, 0.05);
+            
+            --text-primary: #09090b;
+            --text-secondary: #52525b;
+            --text-muted: #a1a1aa;
+            
+            --accent-primary: #18181b;
+
+            /* Semantic Colors (Light) */
+            --crit-bg: #fef2f2;
+            --crit-text: #991b1b;
+            --crit-border: #fecaca;
+            
+            --warn-bg: #fff7ed;
+            --warn-text: #9a3412;
+            --warn-border: #fed7aa;
+            
+            --info-bg: #eff6ff;
+            --info-text: #1e3a8a;
+            --info-border: #bfdbfe;
+
+            /* Code Inspector Variables */
+            --code-bg: #fafafa;
+            --gutter-bg: #f4f4f5;
+            --gutter-border: #e4e4e7;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: background-color 0.2s, color 0.2s;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        /* Top Navigation */
+        .navbar {
+            height: 56px;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 1.5rem;
+            flex-shrink: 0;
+        }
+        .logo-area { display: flex; align-items: center; gap: 0.75rem; font-weight: 500; font-size: 0.95rem; color: var(--text-primary); }
+        .logo-icon { width: 20px; height: 20px; color: var(--text-secondary); }
+        .nav-actions { display: flex; align-items: center; gap: 1rem; }
+
+        .summary-badge {
+            display: none;
+            background: var(--bg-hover);
+            border: 1px solid var(--border-color);
+            padding: 0.3rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+        .summary-badge.has-issues {
+            background: var(--warn-bg);
+            border-color: var(--warn-border);
+            color: var(--warn-text);
+        }
+
+        .theme-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .theme-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+        /* Upload Area */
+        .upload-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+        .upload-card {
+            background: var(--bg-panel);
+            border: 1px dashed var(--border-color);
+            border-radius: 12px;
+            padding: 3rem;
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .upload-card:hover, .upload-card.dragover { border-color: var(--text-secondary); background: var(--bg-hover); }
+        .upload-card svg { color: var(--text-secondary); margin-bottom: 1rem; }
+        .upload-card h2 { font-size: 1.1rem; font-weight: 500; margin-bottom: 0.5rem; }
+        .upload-card p { font-size: 0.85rem; color: var(--text-secondary); }
+        .upload-card input { display: none; }
+
+        /* Dashboard & Master Pane */
+        .dashboard { display: none; flex: 1; overflow: hidden; display: flex; background: var(--bg-base); }
+        .master-pane { width: 340px; background: var(--bg-panel); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; flex-shrink: 0; }
+        .master-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+        .master-header h3 { font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+        .upload-new-btn { background: transparent; border: none; color: var(--text-secondary); cursor: pointer; font-size: 0.8rem; font-weight: 500; }
+        .upload-new-btn:hover { color: var(--text-primary); }
+        
+        .issue-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
+        .issue-item {
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            margin-bottom: 0.25rem;
+            cursor: pointer;
+            border-left: 2px solid transparent;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        .issue-item:hover { background: var(--bg-hover); }
+        .issue-item.active { background: var(--bg-hover); border-left-color: var(--text-primary); }
+        .issue-top { display: flex; justify-content: space-between; align-items: flex-start; }
+        .issue-target { font-size: 0.9rem; font-weight: 500; color: var(--text-primary); word-break: break-all; }
+        .issue-meta { font-size: 0.75rem; color: var(--text-secondary); display: flex; gap: 0.5rem; }
+
+        /* Badges */
+        .pill {
+            padding: 0.15rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border: 1px solid transparent;
+        }
+        .pill.critical { background: var(--crit-bg); color: var(--crit-text); border-color: var(--crit-border); }
+        .pill.warning { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-border); }
+        .pill.info { background: var(--info-bg); color: var(--info-text); border-color: var(--info-border); }
+
+        /* Detail Pane */
+        .detail-pane { flex: 1; display: flex; flex-direction: column; overflow-y: auto; background: var(--bg-base); padding: 2rem; }
+        .detail-content { max-width: 900px; margin: 0 auto; width: 100%; }
+        .empty-state { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 0.9rem; }
+        
+        .detail-header { margin-bottom: 2rem; }
+        .detail-title-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+        .detail-title { font-size: 1.5rem; font-weight: 600; color: var(--text-primary); }
+
+        /* Metadata Grid */
+        .metadata-grid { display: flex; flex-wrap: wrap; gap: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); }
+        .meta-item { display: flex; flex-direction: column; gap: 0.25rem; }
+        .meta-label { font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
+        .meta-value { font-size: 0.9rem; color: var(--text-primary); font-family: 'JetBrains Mono', monospace; }
+
+        /* Diagnostic Panel */
+        .diagnostic-panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin-bottom: 2rem;
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+        }
+        .diag-icon { color: var(--warn-text); margin-top: 0.1rem; }
+        .diag-text { font-size: 0.95rem; line-height: 1.6; color: var(--text-primary); }
+
+        /* ---------------------------------------------------
+           IDE-Like Code Inspector 
+           --------------------------------------------------- */
+        .code-section {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--bg-panel);
+        }
+
+        .code-header {
+            background: var(--bg-hover);
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .code-body {
+            display: flex;
+            background: var(--code-bg);
+            position: relative;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 24px; /* Exact line height required for accurate highlighting overlay */
+            max-height: 500px;
+        }
+
+        .code-gutter {
+            position: sticky;
+            left: 0;
+            background: var(--gutter-bg);
+            border-right: 1px solid var(--gutter-border);
+            padding: 16px 0; /* Match internal content padding */
+            text-align: right;
+            color: var(--text-muted);
+            z-index: 10;
+            min-width: 3.5rem;
+            user-select: none;
+        }
+
+        .gutter-line {
+            padding: 0 1rem 0 0.5rem;
+            height: 24px;
+            box-sizing: border-box;
+        }
+
+        /* Error state gutter accents */
+        .gutter-line.active-critical { color: var(--crit-text); border-left: 2px solid var(--crit-text); background: rgba(248, 113, 113, 0.1); }
+        .gutter-line.active-warning { color: var(--warn-text); border-left: 2px solid var(--warn-text); background: rgba(251, 146, 60, 0.1); }
+
+        .code-scroll-area {
+            position: relative;
+            flex: 1;
+            overflow-x: auto;
+            overflow-y: auto;
+        }
+
+        /* The container for absolute overlays, offset by the top padding (16px) */
+        .highlight-container {
+            position: absolute;
+            top: 16px;
+            left: 0;
+            bottom: 16px;
+            min-width: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .highlight-bg {
+            position: absolute;
+            left: 0;
+            right: 0;
+            border-left: 3px solid transparent;
+        }
+
+        /* Error state highlights */
+        .highlight-bg.critical { background: rgba(248, 113, 113, 0.15); border-left-color: var(--crit-text); }
+        .highlight-bg.warning { background: rgba(251, 146, 60, 0.15); border-left-color: var(--warn-text); }
+
+        /* Content block */
+        .code-content {
+            margin: 0;
+            padding: 16px;
+            position: relative;
+            z-index: 2;
+            width: max-content;
+            min-width: 100%;
+        }
+
+        /* Override hljs styles */
+        .code-content code.hljs {
+            background: transparent !important;
+            padding: 0 !important;
+            line-height: 24px !important;
+        }
+
+        /* Utilities */
+        .hidden { display: none !important; }
+        .loader-spinner { width: 24px; height: 24px; border: 2px solid var(--border-color); border-top: 2px solid var(--text-secondary); border-radius: 50%; animation: spin 1s linear infinite; margin: 1rem auto; display: none; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="logo-area">
+            <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path>
+            </svg>
+            C++ Anti-Pattern Detector
+        </div>
+        <div class="nav-actions">
+            <div id="summary-badge" class="summary-badge">0 Issues Detected</div>
+            <button class="theme-btn" onclick="toggleTheme()" title="Toggle Theme">
+                <svg id="theme-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Upload View -->
+    <div id="upload-view" class="upload-container">
+        <div class="upload-card" id="drop-zone" onclick="document.getElementById('file-upload').click()">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <h2>Select or Drop a File</h2>
+            <p>Upload a .cpp or .h file to begin analysis</p>
+            <input type="file" id="file-upload" accept=".cpp,.cxx,.cc,.h,.hpp">
+            <div id="loader" class="loader-spinner"></div>
+            <div id="error-msg" style="color: var(--crit-text); margin-top: 1rem; font-size: 0.85rem; display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Dashboard View -->
+    <div id="dashboard-view" class="dashboard hidden">
+        <div class="master-pane">
+            <div class="master-header">
+                <h3>Detected Issues</h3>
+                <button class="upload-new-btn" onclick="resetUpload()">+ New Scan</button>
+            </div>
+            <div class="issue-list" id="issue-list"></div>
+        </div>
+        <div class="detail-pane">
+            <div class="detail-content" id="detail-content">
+                <div class="empty-state">Select an issue from the sidebar to view details.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('file-upload');
+        const dropZone = document.getElementById('drop-zone');
+        const loader = document.getElementById('loader');
+        const errorMsg = document.getElementById('error-msg');
+        const uploadView = document.getElementById('upload-view');
+        const dashboardView = document.getElementById('dashboard-view');
+        const summaryBadge = document.getElementById('summary-badge');
+        
+        let currentIssues = [];
+        let currentFilename = '';
+        let isLight = false;
+
+        function toggleTheme() {
+            isLight = !isLight;
+            if(isLight) {
+                document.body.classList.add('light-theme');
+                document.getElementById('highlight-theme').href = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css";
+                document.getElementById('theme-icon').innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
+            } else {
+                document.body.classList.remove('light-theme');
+                document.getElementById('highlight-theme').href = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css";
+                document.getElementById('theme-icon').innerHTML = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
+            }
+        }
+
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                handleFileSelect();
+            }
+        });
+        fileInput.addEventListener('change', handleFileSelect);
+
+        function resetUpload() {
+            dashboardView.classList.add('hidden');
+            summaryBadge.style.display = 'none';
+            uploadView.classList.remove('hidden');
+            errorMsg.style.display = 'none';
+            fileInput.value = '';
+        }
+
+        function handleFileSelect() {
+            if (fileInput.files.length === 0) return;
+            analyzeFile(fileInput.files[0]);
+        }
+
+        async function analyzeFile(file) {
+            errorMsg.style.display = 'none';
+            loader.style.display = 'block';
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/api/analyze', { method: 'POST', body: formData });
+                const data = await response.json();
+
+                if (!response.ok) throw new Error(data.error || 'Analysis failed');
+
+                currentFilename = data.filename;
+                currentIssues = data.results.issues || [];
+                
+                renderDashboard();
+            } catch (error) {
+                errorMsg.textContent = error.message;
+                errorMsg.style.display = 'block';
+            } finally {
+                loader.style.display = 'none';
+            }
+        }
+
+        function renderDashboard() {
+            uploadView.classList.add('hidden');
+            dashboardView.classList.remove('hidden');
+            summaryBadge.style.display = 'block';
+
+            const count = currentIssues.length;
+            if(count === 0) {
+                summaryBadge.textContent = "Clean: 0 Issues";
+                summaryBadge.className = "summary-badge";
+                document.getElementById('issue-list').innerHTML = `<div style="padding:1rem; text-align:center; color:var(--text-secondary); font-size:0.85rem;">No issues found.</div>`;
+                document.getElementById('detail-content').innerHTML = `<div class="empty-state">No structural anti-patterns were detected.</div>`;
+                return;
+            }
+
+            summaryBadge.textContent = `${count} Issue${count !== 1 ? 's' : ''} in ${currentFilename}`;
+            summaryBadge.className = "summary-badge has-issues";
+
+            document.getElementById('issue-list').innerHTML = currentIssues.map((issue, index) => {
+                const sevClass = issue.severity.toLowerCase();
+                const author = "Local Developer"; 
+                return `
+                    <div class="issue-item" onclick="selectIssue(${index})" id="issue-item-${index}">
+                        <div class="issue-top">
+                            <span class="pill ${sevClass}">${issue.severity}</span>
+                            <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:500;">${issue.type}</span>
+                        </div>
+                        <div class="issue-target">${issue.name}</div>
+                    </div>
+                `;
+            }).join('');
+
+            selectIssue(0);
+        }
+
+        function selectIssue(index) {
+            const issue = currentIssues[index];
+            if(!issue) return;
+
+            document.querySelectorAll('.issue-item').forEach(el => el.classList.remove('active'));
+            document.getElementById(`issue-item-${index}`).classList.add('active');
+
+            const sevClass = issue.severity.toLowerCase();
+            
+            // Logic for Code Inspector Highlighting
+            const isBlockIssue = issue.type === 'God Class';
+            const highlightLines = [];
+            
+            if (isBlockIssue) {
+                // Highlight just the class signature line for God Classes
+                highlightLines.push({ start: issue.line_start, end: issue.line_start, sev: issue.severity });
+            } else {
+                // Highlight the specific variable declaration lines for Mutable Global State
+                highlightLines.push({ start: issue.line_start, end: issue.line_end, sev: issue.severity });
+            }
+
+            // Build Line Gutter
+            let gutterHtml = '';
+            for (let i = issue.context_start; i <= issue.context_end; i++) {
+                let isHighlighted = false;
+                for (let hl of highlightLines) {
+                    if (i >= hl.start && i <= hl.end) isHighlighted = true;
+                }
+                
+                let gutterClass = 'gutter-line';
+                if (isHighlighted) gutterClass += ` active-${sevClass}`;
+                gutterHtml += `<div class="${gutterClass}">${i}</div>`;
+            }
+
+            // Build Highlight Overlay Boxes
+            let bgLayersHtml = '';
+            const lineHeight = 24; // strictly matches css
+            for (let hl of highlightLines) {
+                const top = (hl.start - issue.context_start) * lineHeight;
+                const height = (hl.end - hl.start + 1) * lineHeight;
+                bgLayersHtml += `<div class="highlight-bg ${sevClass}" style="top: ${top}px; height: ${height}px;"></div>`;
+            }
+
+            document.getElementById('detail-content').innerHTML = `
+                <div class="detail-header">
+                    <div class="detail-title-row">
+                        <h2 class="detail-title">${issue.type}</h2>
+                        <span class="pill ${sevClass}">${issue.severity}</span>
+                    </div>
+                    
+                    <div class="metadata-grid">
+                        <div class="meta-item">
+                            <span class="meta-label">File</span>
+                            <span class="meta-value">${currentFilename}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Target</span>
+                            <span class="meta-value">${issue.name}</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Location</span>
+                            <span class="meta-value">L${issue.line_start} - L${issue.line_end}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="diagnostic-panel">
+                    <svg class="diag-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <div class="diag-text">${issue.description}</div>
+                </div>
+
+                <div class="code-section">
+                    <div class="code-header">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline>
+                        </svg>
+                        Code Inspector
+                    </div>
+                    <div class="code-body">
+                        <div class="code-gutter">${gutterHtml}</div>
+                        <div class="code-scroll-area">
+                            <div class="highlight-container">${bgLayersHtml}</div>
+                            <pre class="code-content"><code class="language-cpp">${escapeHtml(issue.snippet)}</code></pre>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.querySelectorAll('.code-content code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+        }
+
+        function escapeHtml(unsafe) {
+            return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
