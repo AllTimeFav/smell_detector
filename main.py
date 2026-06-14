@@ -1,7 +1,7 @@
 import sys
 import os
 import tree_sitter_cpp
-from tree_shitter import Language, Parser
+from tree_sitter import Language, Parser
 
 # Define thresholds for Blob (God Class) detection
 BLOB_LOC_THRESHOLD = 300
@@ -154,6 +154,78 @@ def traverse_ast_for_globals(node, mutable_globals):
 
     return mutable_globals
 
+def traverse_ast_for_singletons(node, singletons):
+    if node.type in ('class_specifier', 'struct_specifier'):
+        class_name_node = node.child_by_field_name('name')
+        if class_name_node:
+            class_name = class_name_node.text.decode('utf-8')
+            has_static_instance = False
+            has_getinstance = False
+
+            def inspect(n):
+                nonlocal has_static_instance, has_getinstance
+                text = n.text.decode('utf-8')
+                if "getInstance" in text:
+                    has_getinstance = True
+                if "static" in text and class_name in text:
+                    has_static_instance = True
+                for c in n.children:
+                    inspect(c)
+
+            inspect(node)
+            if has_static_instance and has_getinstance:
+                singletons.append({
+                    'name': class_name,
+                    'start_point': node.start_point,
+                    'end_point': node.end_point
+                })
+
+    for child in node.children:
+        traverse_ast_for_singletons(child, singletons)
+    return singletons
+
+def traverse_ast_for_refused_bequest(node, issues, current_class=None):
+    if node.type == 'class_specifier':
+        class_name_node = node.child_by_field_name('name')
+        if class_name_node:
+            current_class = class_name_node.text.decode('utf-8')
+            class_text = node.text.decode('utf-8')
+            if ':' in class_text:
+                if "override" in class_text:
+                    if "throw" in class_text or "not supported" in class_text.lower():
+                        issues.append({
+                            'class_name': current_class,
+                            'start_point': node.start_point,
+                            'end_point': node.end_point
+                        })
+
+    for child in node.children:
+        traverse_ast_for_refused_bequest(child, issues, current_class)
+    return issues
+
+def traverse_ast_for_speculative_generality(node, abstract_classes, derived_classes):
+    if node.type == 'class_specifier':
+        name_node = node.child_by_field_name('name')
+        if name_node:
+            class_name = name_node.text.decode('utf-8')
+            text = node.text.decode('utf-8')
+            
+            if "= 0" in text:
+                abstract_classes.add(class_name)
+
+            if ':' in text:
+                parts = text.split(':')
+                if len(parts) > 1:
+                    inheritance = parts[1]
+                    for abs_class in list(abstract_classes):
+                        if abs_class in inheritance:
+                            derived_classes.add(abs_class)
+
+    for child in node.children:
+        traverse_ast_for_speculative_generality(child, abstract_classes, derived_classes)
+    return abstract_classes, derived_classes
+
+
 def analyze_code(code_bytes):
     CPP_LANGUAGE = Language(tree_sitter_cpp.language())
     parser = Parser(CPP_LANGUAGE)
@@ -165,9 +237,15 @@ def analyze_code(code_bytes):
     class_stats = traverse_ast_for_blobs(tree.root_node, {})
     mutable_globals = traverse_ast_for_globals(tree.root_node, [])
     intimacies = traverse_ast_for_intimacy(tree.root_node, [])
+    singletons = traverse_ast_for_singletons(tree.root_node, [])
+    refused_bequests = traverse_ast_for_refused_bequest(tree.root_node, [])
+    
+    abstract_classes, derived_classes = set(), set()
+    traverse_ast_for_speculative_generality(tree.root_node, abstract_classes, derived_classes)
 
     issues = []
     
+    # 1. Inappropriate Intimacy Checker
     for idx, intimacy in enumerate(intimacies):
         line_start = intimacy['start_point'][0] + 1
         line_end = intimacy['end_point'][0] + 1
@@ -176,10 +254,10 @@ def analyze_code(code_bytes):
         snippet = '\n'.join(lines[ctx_start-1 : ctx_end])
         
         if intimacy['kind'] == 'friend':
-            desc = f"Class '{intimacy['class_name']}' uses a friend declaration. This breaks encapsulation and is a strong indicator of Inappropriate Intimacy."
+            desc = f"Class '{intimacy['class_name']}' uses a friend declaration. This breaks encapsulation."
             name = f"friend_in_{intimacy['class_name']}"
         else:
-            desc = f"Method '{intimacy['method_name']}' in class '{intimacy['class_name']}' excessively accesses object '{intimacy['object_name']}'. This is a form of Feature Envy (Inappropriate Intimacy)."
+            desc = f"Method '{intimacy['method_name']}' in class '{intimacy['class_name']}' excessively accesses object '{intimacy['object_name']}'. (Feature Envy)."
             name = f"feature_envy_{intimacy['method_name']}"
             
         issues.append({
@@ -195,6 +273,7 @@ def analyze_code(code_bytes):
             "snippet": snippet
         })
     
+    # 2. God Class Checker
     for cls_name, stats in class_stats.items():
         is_blob = (
             stats['loc'] > BLOB_LOC_THRESHOLD or
@@ -207,7 +286,7 @@ def analyze_code(code_bytes):
             ctx_start = line_start
             ctx_end = line_end
             snippet = '\n'.join(lines[ctx_start-1 : ctx_end])
-            desc = f"Class '{cls_name}' exceeds complexity thresholds: {stats['loc']} LOC (max {BLOB_LOC_THRESHOLD}), {stats['methods']} Methods (max {BLOB_METHODS_THRESHOLD}), {stats['attributes']} Attributes (max {BLOB_ATTRIBUTES_THRESHOLD}). This indicates a severe lack of cohesion, typical of a God Object."
+            desc = f"Class '{cls_name}' exceeds complexity thresholds: {stats['loc']} LOC, {stats['methods']} Methods, {stats['attributes']} Attributes."
             issues.append({
                 "id": f"blob_{cls_name}",
                 "type": "God Class",
@@ -221,10 +300,10 @@ def analyze_code(code_bytes):
                 "snippet": snippet
             })
 
+    # 3. Mutable Global State Checker
     for idx, mg in enumerate(mutable_globals):
         line_start = mg['start_point'][0] + 1
         line_end = mg['end_point'][0] + 1
-        
         ctx_start = max(1, line_start - 4)
         ctx_end = min(len(lines), line_end + 4)
         snippet = '\n'.join(lines[ctx_start-1 : ctx_end])
@@ -238,11 +317,70 @@ def analyze_code(code_bytes):
             "line_end": line_end,
             "context_start": ctx_start,
             "context_end": ctx_end,
-            "description": f"Variable '{mg['name']}' is declared at the global/namespace scope without const or constexpr modifiers. Mutable global state breaks encapsulation, making code unpredictable and difficult to test.",
+            "description": f"Variable '{mg['name']}' is declared at the global/namespace scope without const or constexpr modifiers.",
             "snippet": snippet
         })
 
+    # 4. Singleton Abuse Checker (FIXED: Out of nested loop scope)
+    for s in singletons:
+        line_start = s['start_point'][0] + 1
+        line_end = s['end_point'][0] + 1
+        ctx_start = max(1, line_start - 2)
+        ctx_end = min(len(lines), line_end + 2)
+        snippet = '\n'.join(lines[ctx_start-1 : ctx_end])
+
+        issues.append({
+            "id": f"singleton_{s['name']}",
+            "type": "Singleton Abuse",
+            "severity": "Warning",
+            "name": s['name'],
+            "line_start": line_start,
+            "line_end": line_end,
+            "context_start": ctx_start,
+            "context_end": ctx_end,
+            "description": f"Class '{s['name']}' appears to implement the Singleton pattern. Excessive use creates tight coupling.",
+            "snippet": snippet
+        })
+            
+    # 5. Refused Bequest Checker (FIXED: Out of nested loop scope)
+    for r in refused_bequests:
+        line_start = r['start_point'][0] + 1
+        line_end = r['end_point'][0] + 1
+        ctx_start = max(1, line_start - 2)
+        ctx_end = min(len(lines), line_end + 2)
+        snippet = '\n'.join(lines[ctx_start-1 : ctx_end])
+
+        issues.append({
+            "id": f"refused_{r['class_name']}",
+            "type": "Refused Bequest",
+            "severity": "Warning",
+            "name": r['class_name'],
+            "line_start": line_start,
+            "line_end": line_end,
+            "context_start": ctx_start,
+            "context_end": ctx_end,
+            "description": f"Class '{r['class_name']}' appears to inherit behavior it refuses (throws unsupported exceptions).",
+            "snippet": snippet
+        })
+            
+    # 6. Speculative Generality Checker (FIXED: Out of nested loop scope)
+    for cls in abstract_classes:
+        if cls not in derived_classes:
+            issues.append({
+                "id": f"speculative_{cls}",
+                "type": "Speculative Generality",
+                "severity": "Warning",
+                "name": cls,
+                "line_start": 1,
+                "line_end": 1,
+                "context_start": 1,
+                "context_end": min(5, len(lines)),
+                "description": f"Abstract class '{cls}' has no known subclasses and may represent unused speculative design.",
+                "snippet": "N/A - Global structural issue"
+            })
+
     return {"issues": issues}
+
 
 def analyze_file(filepath):
     with open(filepath, 'rb') as f:
