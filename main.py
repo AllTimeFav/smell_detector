@@ -1,7 +1,7 @@
 import sys
 import os
 import tree_sitter_cpp
-from tree_shitter import Language, Parser
+from tree_sitter import Language, Parser
 
 # Define thresholds for Blob (God Class) detection
 BLOB_LOC_THRESHOLD = 300
