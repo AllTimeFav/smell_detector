@@ -3,21 +3,11 @@
 #include <vector>
 #include <stdexcept>
 
-// =====================================================================
-// 1. MUTABLE GLOBAL STATE
-// Anti-Pattern: Using global variables that can be modified by any 
-// function at any time, leading to unpredictable side effects.
-// =====================================================================
 int globalPlayerScore = 0;
 int globalEnemyCount = 10;
 bool globalIsRunning = true;
 
 
-// =====================================================================
-// 2. REFUSED BEQUEST (Inappropriate Inheritance)
-// Anti-Pattern: A child class inherits from a parent but explicitly 
-// rejects or throws exceptions for the methods it was forced to inherit.
-// =====================================================================
 class GameObject {
 public:
     virtual void walk() = 0;
@@ -28,12 +18,10 @@ public:
 class StaticRock : public GameObject {
 public:
     void walk() override {
-        // Refused Bequest: Rocks cannot walk! 
         throw std::logic_error("Rocks cannot walk, method not supported!");
     }
     
     void attack() override {
-        // Refused Bequest: Rocks cannot attack!
         throw std::logic_error("Rocks cannot attack, method not supported!");
     }
     
@@ -42,8 +30,6 @@ public:
     }
 };
 
-
-// Simple data class used to demonstrate Feature Envy
 class Player {
 private:
     int health = 100;
@@ -55,11 +41,6 @@ public:
 };
 
 
-// =====================================================================
-// 3. GOD CLASS (The Blob)
-// Anti-Pattern: A single massive class that centralizes the intelligence 
-// of the system. It handles networking, audio, UI, and game logic all at once.
-// =====================================================================
 class GameManager {
 private:
     Player player;
@@ -68,12 +49,7 @@ private:
     int audioVolume = 80;
 
 public:
-    // =====================================================================
-    // 4. FEATURE ENVY
-    // Anti-Pattern: This method is more interested in the data of the `Player` 
-    // class than its own class. It extracts data, computes it, and pushes it back.
-    // Fix: This logic belongs inside the Player class itself (e.g., player.takeDamage()).
-    // =====================================================================
+
     void calculateDamageTaken(int incomingDamage) {
         int effectiveArmor = player.getArmor() / 2;
         int damage = incomingDamage - effectiveArmor;
@@ -82,58 +58,45 @@ public:
         player.setHealth(player.getHealth() - damage); 
     }
 
-    // =====================================================================
-    // 5. LONG METHOD & 6. SPAGHETTI CODE
-    // Anti-Pattern (Long Method): This single function tries to handle UI, audio, 
-    // physics, and networking synchronously in one giant block.
-    // Anti-Pattern (Spaghetti): Complex nested if-statements and the use of 'goto' 
-    // to jump around execution blocks chaotically without passing parameters.
-    // =====================================================================
     void runGameLoop() {
         int connectionRetries = 0;
         
-    retryConnection: // SPAGHETTI: Jump label
+    retryConnection:
         if (connectionRetries < 3) {
             std::cout << "Attempting to connect to server..." << std::endl;
             if (networkLatency > 100) {
                 connectionRetries++;
-                goto retryConnection; // SPAGHETTI: Control flow jumps backwards
+                goto retryConnection;
             }
         }
 
         while (globalIsRunning) {
-            // --- UI UPDATE BLOCK ---
-            std::cout << "Score: " << globalPlayerScore << std::endl; // Mutates/reads global state
+            std::cout << "Score: " << globalPlayerScore << std::endl;
             
-            // --- AUDIO PROCESSING BLOCK ---
             if (audioVolume > 0) {
                 std::cout << "Playing background music..." << std::endl;
             }
 
-            // --- PHYSICS & LOGIC BLOCK ---
             for(int i = 0; i < globalEnemyCount; i++) {
-                // Spaghetti: deeply nested, confusing control flow
                 if (i % 2 == 0) {
                     if (globalPlayerScore < 50) {
                         calculateDamageTaken(20);
                     }
                 } else {
-                    globalPlayerScore += 5; // Modifying global state secretly inside a loop
+                    globalPlayerScore += 5;
                 }
             }
 
-            // --- NETWORK SYNC BLOCK ---
             if (networkLatency < 50) {
                 std::cout << "Syncing state with server..." << std::endl;
             } else {
-                goto networkFailure; // SPAGHETTI: Jumping forward to an error state
+                goto networkFailure;
             }
 
-            // End game after one loop for demonstration
             globalIsRunning = false; 
             continue; 
             
-        networkFailure: // SPAGHETTI: Jump label execution
+        networkFailure:
             std::cout << "Fatal Network Error! Dropping game state." << std::endl;
             globalIsRunning = false;
         }

@@ -243,9 +243,9 @@ def analyze_code(code_bytes):
     abstract_classes, derived_classes = set(), set()
     traverse_ast_for_speculative_generality(tree.root_node, abstract_classes, derived_classes)
 
+
     issues = []
     
-    # 1. Inappropriate Intimacy Checker
     for idx, intimacy in enumerate(intimacies):
         line_start = intimacy['start_point'][0] + 1
         line_end = intimacy['end_point'][0] + 1
@@ -254,10 +254,10 @@ def analyze_code(code_bytes):
         snippet = '\n'.join(lines[ctx_start-1 : ctx_end])
         
         if intimacy['kind'] == 'friend':
-            desc = f"Class '{intimacy['class_name']}' uses a friend declaration. This breaks encapsulation."
+            desc = f"Class '{intimacy['class_name']}' uses a friend declaration. This breaks encapsulation and is a strong indicator of Inappropriate Intimacy."
             name = f"friend_in_{intimacy['class_name']}"
         else:
-            desc = f"Method '{intimacy['method_name']}' in class '{intimacy['class_name']}' excessively accesses object '{intimacy['object_name']}'. (Feature Envy)."
+            desc = f"Method '{intimacy['method_name']}' in class '{intimacy['class_name']}' excessively accesses object '{intimacy['object_name']}'. This is a form of Feature Envy (Inappropriate Intimacy)."
             name = f"feature_envy_{intimacy['method_name']}"
             
         issues.append({
@@ -273,7 +273,6 @@ def analyze_code(code_bytes):
             "snippet": snippet
         })
     
-    # 2. God Class Checker
     for cls_name, stats in class_stats.items():
         is_blob = (
             stats['loc'] > BLOB_LOC_THRESHOLD or
@@ -286,7 +285,7 @@ def analyze_code(code_bytes):
             ctx_start = line_start
             ctx_end = line_end
             snippet = '\n'.join(lines[ctx_start-1 : ctx_end])
-            desc = f"Class '{cls_name}' exceeds complexity thresholds: {stats['loc']} LOC, {stats['methods']} Methods, {stats['attributes']} Attributes."
+            desc = f"Class '{cls_name}' exceeds complexity thresholds: {stats['loc']} LOC (max {BLOB_LOC_THRESHOLD}), {stats['methods']} Methods (max {BLOB_METHODS_THRESHOLD}), {stats['attributes']} Attributes (max {BLOB_ATTRIBUTES_THRESHOLD}). This indicates a severe lack of cohesion, typical of a God Object."
             issues.append({
                 "id": f"blob_{cls_name}",
                 "type": "God Class",
@@ -300,10 +299,10 @@ def analyze_code(code_bytes):
                 "snippet": snippet
             })
 
-    # 3. Mutable Global State Checker
     for idx, mg in enumerate(mutable_globals):
         line_start = mg['start_point'][0] + 1
         line_end = mg['end_point'][0] + 1
+        
         ctx_start = max(1, line_start - 4)
         ctx_end = min(len(lines), line_end + 4)
         snippet = '\n'.join(lines[ctx_start-1 : ctx_end])
@@ -317,11 +316,11 @@ def analyze_code(code_bytes):
             "line_end": line_end,
             "context_start": ctx_start,
             "context_end": ctx_end,
-            "description": f"Variable '{mg['name']}' is declared at the global/namespace scope without const or constexpr modifiers.",
+            "description": f"Variable '{mg['name']}' is declared at the global/namespace scope without const or constexpr modifiers. Mutable global state breaks encapsulation, making code unpredictable and difficult to test.",
             "snippet": snippet
         })
 
-    # 4. Singleton Abuse Checker (FIXED: Out of nested loop scope)
+    # 4. Singleton Abuse Checker
     for s in singletons:
         line_start = s['start_point'][0] + 1
         line_end = s['end_point'][0] + 1
@@ -342,7 +341,7 @@ def analyze_code(code_bytes):
             "snippet": snippet
         })
             
-    # 5. Refused Bequest Checker (FIXED: Out of nested loop scope)
+    # 5. Refused Bequest Checker
     for r in refused_bequests:
         line_start = r['start_point'][0] + 1
         line_end = r['end_point'][0] + 1
@@ -363,7 +362,7 @@ def analyze_code(code_bytes):
             "snippet": snippet
         })
             
-    # 6. Speculative Generality Checker (FIXED: Out of nested loop scope)
+    # 6. Speculative Generality Checker 
     for cls in abstract_classes:
         if cls not in derived_classes:
             issues.append({
@@ -380,7 +379,6 @@ def analyze_code(code_bytes):
             })
 
     return {"issues": issues}
-
 
 def analyze_file(filepath):
     with open(filepath, 'rb') as f:

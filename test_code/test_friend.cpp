@@ -4,7 +4,6 @@ class TargetClass {
 private:
     int secretData = 42;
     
-    // Inappropriate Intimacy: IntimateClass has full access to TargetClass internals
     friend class IntimateClass;
 };
 

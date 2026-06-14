@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+body {
+  @apply font-sans h-screen flex flex-col overflow-hidden antialiased bg-zinc-100 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50 transition-colors duration-200;
+}
+
+#root {
+  @apply flex flex-col h-full;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-zinc-200 dark:bg-zinc-800 rounded-md;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-zinc-400 dark:bg-zinc-500;
+}
+
+/* Utilities */
+.loader-spinner {
+  @apply w-6 h-6 border-2 border-zinc-200 dark:border-zinc-800 border-t-zinc-600 dark:border-t-zinc-400 rounded-full animate-spin mx-auto my-4;
+}
+
+.code-content code.hljs {
+  background: transparent !important;
+  padding: 0 !important;
+  line-height: 24px !important;
+}
