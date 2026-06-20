@@ -1,7 +1,10 @@
 import sys
 import os
 import tree_sitter_cpp
-from tree_sitter import Language, Parser
+from tree_sitter import Language, Parser, Query, QueryCursor
+from refused_bequest_detector import build_symbol_table, run_refused_bequest_check
+from speculative_generality_detector import analyze_speculative_generality
+
 
 # Define thresholds for Blob (God Class) detection
 BLOB_LOC_THRESHOLD = 300
@@ -154,76 +157,69 @@ def traverse_ast_for_globals(node, mutable_globals):
 
     return mutable_globals
 
-def traverse_ast_for_singletons(node, singletons):
-    if node.type in ('class_specifier', 'struct_specifier'):
-        class_name_node = node.child_by_field_name('name')
-        if class_name_node:
-            class_name = class_name_node.text.decode('utf-8')
-            has_static_instance = False
-            has_getinstance = False
-
-            def inspect(n):
-                nonlocal has_static_instance, has_getinstance
-                text = n.text.decode('utf-8')
-                if "getInstance" in text:
-                    has_getinstance = True
-                if "static" in text and class_name in text:
-                    has_static_instance = True
-                for c in n.children:
-                    inspect(c)
-
-            inspect(node)
-            if has_static_instance and has_getinstance:
-                singletons.append({
-                    'name': class_name,
-                    'start_point': node.start_point,
-                    'end_point': node.end_point
-                })
-
-    for child in node.children:
-        traverse_ast_for_singletons(child, singletons)
+def traverse_ast_for_singletons(tree, cpp_language):
+    singletons = []
+    query_str = """
+    [
+      (class_specifier
+        name: (type_identifier) @class_name
+        body: (field_declaration_list
+          [
+            (function_definition
+              (storage_class_specifier) @storage
+              declarator: (_) @decl
+            )
+            (declaration
+              (storage_class_specifier) @storage
+              declarator: (_) @decl
+            )
+          ]
+        )
+        (#eq? @storage "static")
+        (#match? @decl "(?i)getinstance")
+      ) @singleton_class
+      (struct_specifier
+        name: (type_identifier) @class_name
+        body: (field_declaration_list
+          [
+            (function_definition
+              (storage_class_specifier) @storage
+              declarator: (_) @decl
+            )
+            (declaration
+              (storage_class_specifier) @storage
+              declarator: (_) @decl
+            )
+          ]
+        )
+        (#eq? @storage "static")
+        (#match? @decl "(?i)getinstance")
+      ) @singleton_class
+    ]
+    """
+    try:
+        query = Query(cpp_language, query_str)
+        cursor = QueryCursor(query)
+        matches = cursor.matches(tree.root_node)
+        
+        seen_classes = set()
+        for match in matches:
+            match_dict = match[1]
+            if 'singleton_class' in match_dict and 'class_name' in match_dict:
+                class_node = match_dict['singleton_class'][0]
+                class_name = match_dict['class_name'][0].text.decode('utf-8')
+                
+                if class_name not in seen_classes:
+                    seen_classes.add(class_name)
+                    singletons.append({
+                        'name': class_name,
+                        'start_point': class_node.start_point,
+                        'end_point': class_node.end_point
+                    })
+    except Exception as e:
+        print(f"Singleton query error: {e}")
+        
     return singletons
-
-def traverse_ast_for_refused_bequest(node, issues, current_class=None):
-    if node.type == 'class_specifier':
-        class_name_node = node.child_by_field_name('name')
-        if class_name_node:
-            current_class = class_name_node.text.decode('utf-8')
-            class_text = node.text.decode('utf-8')
-            if ':' in class_text:
-                if "override" in class_text:
-                    if "throw" in class_text or "not supported" in class_text.lower():
-                        issues.append({
-                            'class_name': current_class,
-                            'start_point': node.start_point,
-                            'end_point': node.end_point
-                        })
-
-    for child in node.children:
-        traverse_ast_for_refused_bequest(child, issues, current_class)
-    return issues
-
-def traverse_ast_for_speculative_generality(node, abstract_classes, derived_classes):
-    if node.type == 'class_specifier':
-        name_node = node.child_by_field_name('name')
-        if name_node:
-            class_name = name_node.text.decode('utf-8')
-            text = node.text.decode('utf-8')
-            
-            if "= 0" in text:
-                abstract_classes.add(class_name)
-
-            if ':' in text:
-                parts = text.split(':')
-                if len(parts) > 1:
-                    inheritance = parts[1]
-                    for abs_class in list(abstract_classes):
-                        if abs_class in inheritance:
-                            derived_classes.add(abs_class)
-
-    for child in node.children:
-        traverse_ast_for_speculative_generality(child, abstract_classes, derived_classes)
-    return abstract_classes, derived_classes
 
 
 def analyze_code(code_bytes):
@@ -237,11 +233,9 @@ def analyze_code(code_bytes):
     class_stats = traverse_ast_for_blobs(tree.root_node, {})
     mutable_globals = traverse_ast_for_globals(tree.root_node, [])
     intimacies = traverse_ast_for_intimacy(tree.root_node, [])
-    singletons = traverse_ast_for_singletons(tree.root_node, [])
-    refused_bequests = traverse_ast_for_refused_bequest(tree.root_node, [])
+    singletons = traverse_ast_for_singletons(tree, CPP_LANGUAGE)
     
     abstract_classes, derived_classes = set(), set()
-    traverse_ast_for_speculative_generality(tree.root_node, abstract_classes, derived_classes)
 
 
     issues = []
@@ -289,7 +283,7 @@ def analyze_code(code_bytes):
             issues.append({
                 "id": f"blob_{cls_name}",
                 "type": "God Class",
-                "severity": "Warning",
+                "severity": "Critical",
                 "name": cls_name,
                 "line_start": line_start,
                 "line_end": line_end,
@@ -310,7 +304,7 @@ def analyze_code(code_bytes):
         issues.append({
             "id": f"global_{idx}_{mg['name']}",
             "type": "Mutable Global State",
-            "severity": "Warning",
+            "severity": "Critical",
             "name": mg['name'],
             "line_start": line_start,
             "line_end": line_end,
@@ -331,7 +325,7 @@ def analyze_code(code_bytes):
         issues.append({
             "id": f"singleton_{s['name']}",
             "type": "Singleton Abuse",
-            "severity": "Warning",
+            "severity": "High",
             "name": s['name'],
             "line_start": line_start,
             "line_end": line_end,
@@ -341,42 +335,6 @@ def analyze_code(code_bytes):
             "snippet": snippet
         })
             
-    # 5. Refused Bequest Checker
-    for r in refused_bequests:
-        line_start = r['start_point'][0] + 1
-        line_end = r['end_point'][0] + 1
-        ctx_start = max(1, line_start - 2)
-        ctx_end = min(len(lines), line_end + 2)
-        snippet = '\n'.join(lines[ctx_start-1 : ctx_end])
-
-        issues.append({
-            "id": f"refused_{r['class_name']}",
-            "type": "Refused Bequest",
-            "severity": "Warning",
-            "name": r['class_name'],
-            "line_start": line_start,
-            "line_end": line_end,
-            "context_start": ctx_start,
-            "context_end": ctx_end,
-            "description": f"Class '{r['class_name']}' appears to inherit behavior it refuses (throws unsupported exceptions).",
-            "snippet": snippet
-        })
-            
-    # 6. Speculative Generality Checker 
-    for cls in abstract_classes:
-        if cls not in derived_classes:
-            issues.append({
-                "id": f"speculative_{cls}",
-                "type": "Speculative Generality",
-                "severity": "Warning",
-                "name": cls,
-                "line_start": 1,
-                "line_end": 1,
-                "context_start": 1,
-                "context_end": min(5, len(lines)),
-                "description": f"Abstract class '{cls}' has no known subclasses and may represent unused speculative design.",
-                "snippet": "N/A - Global structural issue"
-            })
 
     return {"issues": issues}
 
@@ -397,15 +355,54 @@ def analyze_file(filepath):
 
 def main():
     if len(sys.argv) < 2:
-        print(f"Usage: python {sys.argv[0]} <path_to_cpp_file>")
+        print(f"Usage: python {sys.argv[0]} <path_to_cpp_file_or_directory>")
         sys.exit(1)
 
-    filepath = sys.argv[1]
-    if not os.path.exists(filepath):
-        print(f"Error: File '{filepath}' not found.")
+    path = sys.argv[1]
+    if not os.path.exists(path):
+        print(f"Error: Path '{path}' not found.")
         sys.exit(1)
 
-    analyze_file(filepath)
+    if os.path.isdir(path):
+        print(f"Scanning directory: {path}")
+        cpp_language = Language(tree_sitter_cpp.language())
+        classes_dict, _ = build_symbol_table(path, cpp_language)
+        print(f"Mapped {len(classes_dict)} classes. Checking for Refused Bequest...")
+        issues = run_refused_bequest_check(classes_dict)
+        if not issues:
+            print("\nNo Refused Bequest anti-patterns detected above the threshold.")
+        else:
+            print(f"\nDetected {len(issues)} Refused Bequest issue(s):\n")
+            for issue in issues:
+                ratio_pct = f"{issue['ratio'] * 100:.1f}%"
+                print("=" * 60)
+                print(f"[WARNING] Refused Bequest detected!")
+                print(f"  File Path:    {issue['file_path']}")
+                print(f"  Child Class:  {issue['child_class']}")
+                print(f"  Parent Class: {issue['parent_class']}")
+                print(f"  Ratio:        {ratio_pct} actively refused inherited methods")
+                print(f"  Flagged suspicious methods:")
+                for m_name, reason in issue['flagged_methods']:
+                    print(f"    - {m_name} ({reason})")
+            print("=" * 60)
+            
+        print(f"\nChecking for Speculative Generality...")
+        sg_issues = analyze_speculative_generality(cpp_language, directory=path)
+        if not sg_issues:
+            print("No Speculative Generality anti-patterns detected.")
+        else:
+            print(f"\nDetected {len(sg_issues)} Speculative Generality issue(s):\n")
+            for issue in sg_issues:
+                print("=" * 60)
+                print(f"[WARNING] Speculative Generality detected!")
+                print(f"  File Path:    {issue['file_path']}")
+                print(f"  Class:        {issue['class_name']}")
+                print(f"  Indicators:")
+                for ind in issue['indicators']:
+                    print(f"    - {ind}")
+            print("=" * 60)
+    else:
+        analyze_file(path)
 
 if __name__ == '__main__':
     main()

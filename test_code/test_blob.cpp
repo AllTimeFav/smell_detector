@@ -17,7 +17,7 @@ public:
     float getValue() const;
 };
 
-// 2. A Blob Class (God Object) with too many attributes and methods
+// 2. A Blob Class
 class TestClass {
 private:
     int attr1;
