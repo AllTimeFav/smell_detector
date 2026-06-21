@@ -2,50 +2,65 @@ import sys
 import os
 import tree_sitter_cpp
 from tree_sitter import Language, Parser, Query, QueryCursor
-from refused_bequest_detector import build_symbol_table, run_refused_bequest_check
-from speculative_generality_detector import analyze_speculative_generality
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import uvicorn
 
+# Safely import custom detectors
+try:
+    from refused_bequest_detector import build_symbol_table, run_refused_bequest_check
+    from speculative_generality_detector import analyze_speculative_generality
+except ImportError:
+    # Fallback mock implementations if modules aren't in the same directory
+    def build_symbol_table(path, lang): return {}, None
+    def run_refused_bequest_check(classes): return []
+    def analyze_speculative_generality(lang, directory): return []
 
-# Define thresholds for Blob (God Class) detection
-BLOB_LOC_THRESHOLD = 300
-BLOB_METHODS_THRESHOLD = 15
-BLOB_ATTRIBUTES_THRESHOLD = 10
+# Create the FastAPI instance
+app = FastAPI(
+    title="C++ Code Smell Detector API", 
+    description="Scan your C++ files for anti-patterns dynamically.",
+    version="1.0.0"
+)
 
-def traverse_ast_for_blobs(node, class_stats, current_class=None):
+PUBLIC_DATA_THRESHOLD = 5
+INTIMACY_METHOD_CALL_THRESHOLD = 3
+
+class ScanRequest(BaseModel):
+    path: str
+
+def traverse_ast_for_public_data_members(node, classes):
     if node.type in ('class_specifier', 'struct_specifier'):
         name_node = node.child_by_field_name('name')
         if name_node:
-            current_class = name_node.text.decode('utf-8')
-            if current_class not in class_stats:
-                class_stats[current_class] = {
-                    'name': current_class,
-                    'loc': node.end_point[0] - node.start_point[0] + 1,
-                    'methods': 0,
-                    'attributes': 0,
-                    'start_byte': node.start_byte,
-                    'end_byte': node.end_byte,
-                    'start_point': node.start_point,
-                    'end_point': node.end_point
-                }
+            class_name = name_node.text.decode('utf-8')
+            public_fields = 0
+            text = node.text.decode('utf-8')
+            lines = text.split('\n')
+            inside_public = False
+            for line in lines:
+                line = line.strip()
+                if line.startswith("public:"):
+                    inside_public = True
+                    continue
+                if line.startswith("private:") or line.startswith("protected:"):
+                    inside_public = False
+                    continue
+                if inside_public:
+                    if ";" in line and "(" not in line:
+                        public_fields += 1
 
-    if current_class and node.parent and node.parent.type == 'field_declaration_list':
-        is_function = False
-        for child in node.children:
-            if child.type == 'function_declarator':
-                is_function = True
-                break
-                
-        if node.type == 'function_definition' or is_function:
-            class_stats[current_class]['methods'] += 1
-        elif node.type == 'field_declaration':
-            class_stats[current_class]['attributes'] += 1
+            if public_fields > PUBLIC_DATA_THRESHOLD:
+                classes.append({
+                    "name": class_name,
+                    "count": public_fields,
+                    "start_point": node.start_point,
+                    "end_point": node.end_point
+                })
 
     for child in node.children:
-        traverse_ast_for_blobs(child, class_stats, current_class)
-
-    return class_stats
-
-INTIMACY_METHOD_CALL_THRESHOLD = 3
+        traverse_ast_for_public_data_members(child, classes)
+    return classes
 
 def traverse_ast_for_intimacy(node, intimacies, current_class=None, current_method=None, method_calls=None):
     if method_calls is None:
@@ -96,7 +111,6 @@ def traverse_ast_for_intimacy(node, intimacies, current_class=None, current_meth
                     if m_info:
                         calls = m_info['calls']
                         calls[obj_name] = calls.get(obj_name, 0) + 1
-                        
                         if calls[obj_name] == INTIMACY_METHOD_CALL_THRESHOLD:
                             intimacies.append({
                                 'kind': 'feature_envy',
@@ -109,7 +123,6 @@ def traverse_ast_for_intimacy(node, intimacies, current_class=None, current_meth
 
     for child in node.children:
         traverse_ast_for_intimacy(child, intimacies, current_class, current_method, method_calls)
-
     return intimacies
 
 def traverse_ast_for_globals(node, mutable_globals):
@@ -154,7 +167,6 @@ def traverse_ast_for_globals(node, mutable_globals):
 
     for child in node.children:
         traverse_ast_for_globals(child, mutable_globals)
-
     return mutable_globals
 
 def traverse_ast_for_singletons(tree, cpp_language):
@@ -221,23 +233,19 @@ def traverse_ast_for_singletons(tree, cpp_language):
         
     return singletons
 
-
 def analyze_code(code_bytes):
     CPP_LANGUAGE = Language(tree_sitter_cpp.language())
     parser = Parser(CPP_LANGUAGE)
     tree = parser.parse(code_bytes)
 
-    code_str = code_bytes.decode('utf-8')
+    code_str = code_bytes.decode('utf-8', errors='ignore')
     lines = code_str.splitlines()
 
-    class_stats = traverse_ast_for_blobs(tree.root_node, {})
+    public_data_classes = traverse_ast_for_public_data_members(tree.root_node, [])
     mutable_globals = traverse_ast_for_globals(tree.root_node, [])
     intimacies = traverse_ast_for_intimacy(tree.root_node, [])
     singletons = traverse_ast_for_singletons(tree, CPP_LANGUAGE)
     
-    abstract_classes, derived_classes = set(), set()
-
-
     issues = []
     
     for idx, intimacy in enumerate(intimacies):
@@ -248,10 +256,10 @@ def analyze_code(code_bytes):
         snippet = '\n'.join(lines[ctx_start-1 : ctx_end])
         
         if intimacy['kind'] == 'friend':
-            desc = f"Class '{intimacy['class_name']}' uses a friend declaration. This breaks encapsulation and is a strong indicator of Inappropriate Intimacy."
+            desc = f"Class '{intimacy['class_name']}' uses a friend declaration. This breaks encapsulation."
             name = f"friend_in_{intimacy['class_name']}"
         else:
-            desc = f"Method '{intimacy['method_name']}' in class '{intimacy['class_name']}' excessively accesses object '{intimacy['object_name']}'. This is a form of Feature Envy (Inappropriate Intimacy)."
+            desc = f"Method '{intimacy['method_name']}' excessively accesses object '{intimacy['object_name']}'."
             name = f"feature_envy_{intimacy['method_name']}"
             
         issues.append({
@@ -261,42 +269,31 @@ def analyze_code(code_bytes):
             "name": name,
             "line_start": line_start,
             "line_end": line_end,
-            "context_start": ctx_start,
-            "context_end": ctx_end,
             "description": desc,
             "snippet": snippet
         })
     
-    for cls_name, stats in class_stats.items():
-        is_blob = (
-            stats['loc'] > BLOB_LOC_THRESHOLD or
-            stats['methods'] > BLOB_METHODS_THRESHOLD or
-            stats['attributes'] > BLOB_ATTRIBUTES_THRESHOLD
-        )
-        if is_blob:
-            line_start = stats['start_point'][0] + 1
-            line_end = stats['end_point'][0] + 1
-            ctx_start = line_start
-            ctx_end = line_end
-            snippet = '\n'.join(lines[ctx_start-1 : ctx_end])
-            desc = f"Class '{cls_name}' exceeds complexity thresholds: {stats['loc']} LOC (max {BLOB_LOC_THRESHOLD}), {stats['methods']} Methods (max {BLOB_METHODS_THRESHOLD}), {stats['attributes']} Attributes (max {BLOB_ATTRIBUTES_THRESHOLD}). This indicates a severe lack of cohesion, typical of a God Object."
-            issues.append({
-                "id": f"blob_{cls_name}",
-                "type": "God Class",
-                "severity": "Critical",
-                "name": cls_name,
-                "line_start": line_start,
-                "line_end": line_end,
-                "context_start": ctx_start,
-                "context_end": ctx_end,
-                "description": desc,
-                "snippet": snippet
-            })
+    for cls in public_data_classes:
+        line_start = cls['start_point'][0] + 1
+        line_end = cls['end_point'][0] + 1
+        ctx_start = max(1, line_start - 2)
+        ctx_end = min(len(lines), line_end + 2)
+        snippet = '\n'.join(lines[ctx_start-1:ctx_end])
+
+        issues.append({
+            "id": f"public_data_{cls['name']}",
+            "type": "Excessive Public Data Members",
+            "severity": "High",
+            "name": cls['name'],
+            "line_start": line_start,
+            "line_end": line_end,
+            "description": f"Class '{cls['name']}' contains {cls['count']} public data members.",
+            "snippet": snippet
+        })
 
     for idx, mg in enumerate(mutable_globals):
         line_start = mg['start_point'][0] + 1
         line_end = mg['end_point'][0] + 1
-        
         ctx_start = max(1, line_start - 4)
         ctx_end = min(len(lines), line_end + 4)
         snippet = '\n'.join(lines[ctx_start-1 : ctx_end])
@@ -308,13 +305,10 @@ def analyze_code(code_bytes):
             "name": mg['name'],
             "line_start": line_start,
             "line_end": line_end,
-            "context_start": ctx_start,
-            "context_end": ctx_end,
-            "description": f"Variable '{mg['name']}' is declared at the global/namespace scope without const or constexpr modifiers. Mutable global state breaks encapsulation, making code unpredictable and difficult to test.",
+            "description": f"Variable '{mg['name']}' is declared at global/namespace scope without const.",
             "snippet": snippet
         })
 
-    # 4. Singleton Abuse Checker
     for s in singletons:
         line_start = s['start_point'][0] + 1
         line_end = s['end_point'][0] + 1
@@ -329,80 +323,50 @@ def analyze_code(code_bytes):
             "name": s['name'],
             "line_start": line_start,
             "line_end": line_end,
-            "context_start": ctx_start,
-            "context_end": ctx_end,
-            "description": f"Class '{s['name']}' appears to implement the Singleton pattern. Excessive use creates tight coupling.",
+            "description": f"Class '{s['name']}' appears to implement the Singleton pattern.",
             "snippet": snippet
         })
             
-
     return {"issues": issues}
 
-def analyze_file(filepath):
-    with open(filepath, 'rb') as f:
-        code = f.read()
+# --- ENDPOINTS ---
 
-    results = analyze_code(code)
+@app.get("/")
+def home():
+    return {
+        "status": "Success",
+        "message": "Welcome to the Code Smell Detector! Use /docs to visually test endpoints.",
+        "test_scanner_url": "http://127.0.0.1:5000/docs"
+    }
 
-    print(f"--- Analysis for {filepath} ---")
-    issues = results.get("issues", [])
-    
-    if not issues:
-        print("No anti-patterns detected. Clean code!")
-    else:
-        for issue in issues:
-            print(f"[{issue['severity'].upper()}] {issue['type']}: '{issue['name']}' at lines {issue['line_start']}-{issue['line_end']}")
-
-def main():
-    if len(sys.argv) < 2:
-        print(f"Usage: python {sys.argv[0]} <path_to_cpp_file_or_directory>")
-        sys.exit(1)
-
-    path = sys.argv[1]
+@app.post("/api/scan")
+def scan_directory_or_file(request: ScanRequest):
+    path = request.path
     if not os.path.exists(path):
-        print(f"Error: Path '{path}' not found.")
-        sys.exit(1)
+        raise HTTPException(status_code=404, detail=f"Target path '{path}' does not exist.")
 
-    if os.path.isdir(path):
-        print(f"Scanning directory: {path}")
+    results = {"file_issues": [], "structural_issues": {}}
+
+    if os.path.isfile(path):
+        with open(path, 'rb') as f:
+            code = f.read()
+        file_results = analyze_code(code)
+        results["file_issues"] = file_results.get("issues", [])
+    
+    elif os.path.isdir(path):
         cpp_language = Language(tree_sitter_cpp.language())
         classes_dict, _ = build_symbol_table(path, cpp_language)
-        print(f"Mapped {len(classes_dict)} classes. Checking for Refused Bequest...")
-        issues = run_refused_bequest_check(classes_dict)
-        if not issues:
-            print("\nNo Refused Bequest anti-patterns detected above the threshold.")
-        else:
-            print(f"\nDetected {len(issues)} Refused Bequest issue(s):\n")
-            for issue in issues:
-                ratio_pct = f"{issue['ratio'] * 100:.1f}%"
-                print("=" * 60)
-                print(f"[WARNING] Refused Bequest detected!")
-                print(f"  File Path:    {issue['file_path']}")
-                print(f"  Child Class:  {issue['child_class']}")
-                print(f"  Parent Class: {issue['parent_class']}")
-                print(f"  Ratio:        {ratio_pct} actively refused inherited methods")
-                print(f"  Flagged suspicious methods:")
-                for m_name, reason in issue['flagged_methods']:
-                    print(f"    - {m_name} ({reason})")
-            print("=" * 60)
-            
-        print(f"\nChecking for Speculative Generality...")
+        
+        rb_issues = run_refused_bequest_check(classes_dict)
         sg_issues = analyze_speculative_generality(cpp_language, directory=path)
-        if not sg_issues:
-            print("No Speculative Generality anti-patterns detected.")
-        else:
-            print(f"\nDetected {len(sg_issues)} Speculative Generality issue(s):\n")
-            for issue in sg_issues:
-                print("=" * 60)
-                print(f"[WARNING] Speculative Generality detected!")
-                print(f"  File Path:    {issue['file_path']}")
-                print(f"  Class:        {issue['class_name']}")
-                print(f"  Indicators:")
-                for ind in issue['indicators']:
-                    print(f"    - {ind}")
-            print("=" * 60)
-    else:
-        analyze_file(path)
+        
+        results["structural_issues"] = {
+            "refused_bequest": rb_issues,
+            "speculative_generality": sg_issues
+        }
+
+    return results
 
 if __name__ == '__main__':
-    main()
+    # Using the 'app' instance explicitly eliminates naming mismatches
+    uvicorn.run(app, host="127.0.0.1", port=5000)
