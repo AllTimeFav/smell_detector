@@ -22,6 +22,9 @@ import tree_sitter_cpp
 from tree_sitter import Language
 from refused_bequest_detector import build_symbol_table, run_refused_bequest_check
 from speculative_generality_detector import analyze_speculative_generality
+import zipfile
+import rarfile
+import io
 
 @app.post("/api/analyze")
 async def analyze(files: List[UploadFile] = File(...)):
@@ -32,24 +35,51 @@ async def analyze(files: List[UploadFile] = File(...)):
     files_analyzed = 0
     file_contents = {}
     
+    async def process_file(filename, code_bytes):
+        nonlocal files_analyzed
+        file_contents[filename] = code_bytes
+        results = analyze_code(code_bytes)
+        for issue in results.get("issues", []):
+            issue["filename"] = filename
+            all_issues.append(issue)
+        files_analyzed += 1
+
     for file in files:
         if not file.filename: continue
         
-        # Filter for valid C/C++ extensions
-        if not file.filename.lower().endswith(('.cpp', '.h', '.hpp', '.cxx', '.cc', '.c')):
-            continue
-            
         try:
-            code_bytes = await file.read()
-            file_contents[file.filename] = code_bytes
-            results = analyze_code(code_bytes)
-            # Tag each issue with the filename so the frontend knows where it came from
-            for issue in results.get("issues", []):
-                issue["filename"] = file.filename
-                all_issues.append(issue)
-            files_analyzed += 1
+            file_bytes = await file.read()
+            
+            if file.filename.lower().endswith('.zip'):
+                with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+                    for zinfo in z.infolist():
+                        if zinfo.is_dir(): continue
+                        if zinfo.filename.lower().endswith(('.cpp', '.h', '.hpp', '.cxx', '.cc', '.c')):
+                            await process_file(zinfo.filename, z.read(zinfo.filename))
+            elif file.filename.lower().endswith('.rar'):
+                import tempfile
+                import subprocess
+                import os
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    rar_path = os.path.join(temp_dir, 'upload.rar')
+                    with open(rar_path, 'wb') as f:
+                        f.write(file_bytes)
+                    
+                    subprocess.run(["tar", "-xf", rar_path, "-C", temp_dir], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    
+                    for root, _, files_in_dir in os.walk(temp_dir):
+                        for fname in files_in_dir:
+                            if fname == 'upload.rar': continue
+                            if fname.lower().endswith(('.cpp', '.h', '.hpp', '.cxx', '.cc', '.c')):
+                                filepath = os.path.join(root, fname)
+                                with open(filepath, 'rb') as f:
+                                    rel_name = os.path.relpath(filepath, temp_dir)
+                                    await process_file(rel_name, f.read())
+            elif file.filename.lower().endswith(('.cpp', '.h', '.hpp', '.cxx', '.cc', '.c')):
+                await process_file(file.filename, file_bytes)
+                
         except Exception as e:
-            print(f"Error analyzing {file.filename}: {e}")
+            print(f"Error processing {file.filename}: {e}")
             
     if files_analyzed == 0:
          raise HTTPException(status_code=400, detail="No valid C++ files found in upload")

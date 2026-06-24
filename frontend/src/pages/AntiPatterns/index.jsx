@@ -5,7 +5,7 @@ import { Layers, ChevronRight, Activity, GitCommit, Search } from 'lucide-react'
 import { cn } from '../../utils/cn';
 
 const ALL_PATTERNS = [
-  'Singleton Abuse', 'God Class', 'Refused Bequest', 
+  'Singleton Abuse', 'Excessive Public Data Members', 'Refused Bequest', 
   'Speculative Generality', 'Inappropriate Intimacy', 'Mutable Global State'
 ];
 

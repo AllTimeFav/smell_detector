@@ -84,9 +84,9 @@ export function InsightsPanel() {
             <FileText className="w-4 h-4 mr-2 text-zinc-500" />
             Location
           </h3>
-          <div className="bg-zinc-50 dark:bg-zinc-900 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 text-sm flex justify-between items-center font-mono">
-            <span className="text-zinc-600 dark:text-zinc-300">{issue.filename}</span>
-            <span className="text-zinc-400">L{issue.line_start} - L{issue.line_end}</span>
+          <div className="bg-zinc-50 dark:bg-zinc-900 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 text-sm flex flex-wrap justify-between items-start gap-2 font-mono">
+            <span className="text-zinc-600 dark:text-zinc-300 break-all">{issue.filename}</span>
+            <span className="text-zinc-400 whitespace-nowrap">L{issue.line_start} - L{issue.line_end}</span>
           </div>
         </section>
 

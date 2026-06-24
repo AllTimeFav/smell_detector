@@ -13,14 +13,9 @@ export function CodeInspector({ issue }) {
   if (!issue) return null;
 
   const sevClass = issue.severity.toLowerCase();
-  const isBlockIssue = issue.type === 'God Class';
   const highlightLines = [];
   
-  if (isBlockIssue) {
-    highlightLines.push({ start: issue.line_start, end: issue.line_start, sev: issue.severity });
-  } else {
-    highlightLines.push({ start: issue.line_start, end: issue.line_end, sev: issue.severity });
-  }
+  highlightLines.push({ start: issue.line_start, end: issue.line_end, sev: issue.severity });
 
   const lineHeight = 24; 
   let gutterElements = [];
@@ -29,9 +24,7 @@ export function CodeInspector({ issue }) {
   for (let hl of highlightLines) {
     const top = (hl.start - issue.context_start) * lineHeight;
     const height = (hl.end - hl.start + 1) * lineHeight;
-    let bgClasses = "absolute left-0 right-0 border-l-[3px] border-transparent ";
-    if (sevClass === 'critical') bgClasses += "bg-red-100/50 dark:bg-red-400/15 border-red-800 dark:border-red-300";
-    else if (sevClass === 'warning') bgClasses += "bg-orange-100/50 dark:bg-orange-400/15 border-orange-800 dark:border-orange-300";
+    let bgClasses = "absolute left-0 right-0 border-l-[3px] border-transparent bg-red-100/50 dark:bg-red-400/15 border-red-800 dark:border-red-300";
 
     bgLayersElements.push(
       <div key={`bg-${hl.start}`} className={bgClasses} style={{ top: `${top}px`, height: `${height}px` }}></div>
@@ -46,8 +39,7 @@ export function CodeInspector({ issue }) {
     
     let gutterClass = "pr-4 pl-2 h-[24px] box-border ";
     if (isHighlighted) {
-      if (sevClass === 'critical') gutterClass += "text-red-800 dark:text-red-300 border-l-2 border-red-800 dark:border-red-300 bg-red-100/50 dark:bg-red-400/10";
-      else if (sevClass === 'warning') gutterClass += "text-orange-800 dark:text-orange-300 border-l-2 border-orange-800 dark:border-orange-300 bg-orange-100/50 dark:bg-orange-400/10";
+      gutterClass += "text-red-800 dark:text-red-300 border-l-2 border-red-800 dark:border-red-300 bg-red-100/50 dark:bg-red-400/10";
     }
 
     gutterElements.push(

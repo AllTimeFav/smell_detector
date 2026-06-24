@@ -36,7 +36,9 @@ export function UploadZone() {
     onDrop,
     accept: {
       'text/x-c++src': ['.cpp', '.c', '.cc', '.cxx'],
-      'text/x-c++hdr': ['.h', '.hpp']
+      'text/x-c++hdr': ['.h', '.hpp'],
+      'application/zip': ['.zip'],
+      'application/x-rar-compressed': ['.rar']
     }
   });
 
@@ -56,8 +58,8 @@ export function UploadZone() {
           <UploadCloud className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Upload C++ Source Files</h3>
-          <p className="text-zinc-500 dark:text-zinc-400 mt-1">Drag and drop your .cpp, .h, .hpp files here, or click to select</p>
+          <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Upload C++ Source Files or Archives</h3>
+          <p className="text-zinc-500 dark:text-zinc-400 mt-1">Drag and drop your .cpp, .h files, or .zip/.rar projects here</p>
         </div>
         
         {mutation.isPending && (

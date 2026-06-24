@@ -1,7 +1,14 @@
 import { create } from 'zustand';
 
+const getSystemTheme = () => {
+  if (typeof window !== 'undefined') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  return true;
+};
+
 export const useThemeStore = create((set) => ({
-  isDark: true, // Default to dark theme for that premium IDE look
+  isDark: getSystemTheme(), // Default to system theme
   toggleTheme: () => set((state) => {
     const newDark = !state.isDark;
     if (newDark) {

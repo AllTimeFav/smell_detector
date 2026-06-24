@@ -1,39 +1,72 @@
-#include <iostream>
-
-// 1. Abstract class with only one child (Core Indicator)
-class AbstractBase {
+// Abstract class with exactly 1 child
+class AbstractProcessor {
 public:
-    virtual void doSomething() = 0;
+    virtual void process() = 0; // Pure virtual
 };
 
-class OnlyChild : public AbstractBase {
+class OnlyChildProcessor : public AbstractProcessor {
 public:
-    void doSomething() override {
-        std::cout << "Doing something\n";
+    void process() override {
+        int x = 1;
     }
 };
 
-// 2. Unused Templates/Generics (Core Indicator)
+// Unused template parameter
 template <typename T, typename U>
-class GenericClass {
+class GenericContainer {
+    T data; // T is used
+    // U is not used!
+};
+
+// Unused parameter & Empty hook
+class BaseHandler {
 public:
-    void print() {
-        std::cout << "Not using T or U at all\n";
+    // Empty virtual hook not overridden by anyone
+    virtual void onEvent() {} 
+    
+    // Unused parameter 'flags'
+    void handle(int data, int flags) {
+        int y = data + 1;
     }
 };
 
-// 3. Secondary Indicators (Empty methods, Unused parameters, Unused virtual hooks)
-class SecondaryIndicatorsClass {
+// Interface with 2+ children
+class IRenderer {
 public:
-    // Empty method
-    void emptyMethod() {}
-    
-    // Unused parameter
-    void methodWithUnusedParam(int x, int y) {
-        std::cout << "Only using x: " << x << "\n";
-        // y is unused
-    }
-    
-    // Unused virtual hook (never overridden since this class has no children)
-    virtual void unusedHook() {}
+    virtual void render() = 0;
+};
+
+class OpenGLRenderer : public IRenderer {
+public:
+    void render() override {}
+};
+
+class DirectXRenderer : public IRenderer {
+public:
+    void render() override {}
+};
+
+//  Used template
+template <typename K, typename V>
+class Dictionary {
+    K key;
+    V value;
+};
+
+// More speculative generality edge cases
+class IOrphanedInterface {
+public:
+    virtual void doWork() = 0; // 0 children
+};
+
+template <class X, class Y, class Z>
+struct TripleTrouble {
+    X x; 
+    Y y;
+    // Z is unused
+};
+
+class EventListener {
+public:
+    virtual void onMouseClick(int x, int y) {} // unused parameters and empty body
 };

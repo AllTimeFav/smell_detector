@@ -4,42 +4,7 @@ import tree_sitter_cpp
 from tree_sitter import Language, Parser, Query, QueryCursor
 from refused_bequest_detector import build_symbol_table, run_refused_bequest_check
 from speculative_generality_detector import analyze_speculative_generality
-
-
-PUBLIC_DATA_THRESHOLD = 5
-
-def traverse_ast_for_public_data_members(node, classes):
-    if node.type in ('class_specifier', 'struct_specifier'):
-        name_node = node.child_by_field_name('name')
-        if name_node:
-            class_name = name_node.text.decode('utf-8')
-            public_fields = 0
-            text = node.text.decode('utf-8')
-            lines = text.split('\n')
-            inside_public = False
-            for line in lines:
-                line = line.strip()
-                if line.startswith("public:"):
-                    inside_public = True
-                    continue
-                if line.startswith("private:") or line.startswith("protected:"):
-                    inside_public = False
-                    continue
-                if inside_public:
-                    if ";" in line and "(" not in line:
-                        public_fields += 1
-
-            if public_fields > PUBLIC_DATA_THRESHOLD:
-                classes.append({
-                    "name": class_name,
-                    "count": public_fields,
-                    "start_point": node.start_point,
-                    "end_point": node.end_point
-                })
-
-    for child in node.children:
-        traverse_ast_for_public_data_members(child, classes)
-    return classes
+from excessive_public_data_members_detector import traverse_ast_for_public_data_members
 
 
 INTIMACY_METHOD_CALL_THRESHOLD = 3
@@ -275,6 +240,8 @@ def analyze_code(code_bytes):
             "name": cls['name'],
             "line_start": line_start,
             "line_end": line_end,
+            "context_start": ctx_start,
+            "context_end": ctx_end,
             "description": f"Class '{cls['name']}' contains {cls['count']} public data members.",
             "snippet": snippet
         })
