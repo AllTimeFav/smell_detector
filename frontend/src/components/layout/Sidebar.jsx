@@ -28,7 +28,7 @@ export function Sidebar() {
           <ShieldAlert className="w-6 h-6 text-indigo-500 mr-2" />
           <span className="font-semibold text-lg text-zinc-900 dark:text-zinc-100 tracking-tight whitespace-nowrap">Smell Detector</span>
         </div>
-        <button 
+        <button
           onClick={() => setIsCollapsed(!isCollapsed)}
           className="p-2 rounded-md text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
           title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -47,12 +47,12 @@ export function Sidebar() {
             className={({ isActive }) => cn(
               "flex items-center rounded-md text-sm font-medium transition-colors group",
               isCollapsed ? "justify-center p-3" : "px-3 py-2",
-              isActive 
-                ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" 
+              isActive
+                ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
                 : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100"
             )}
           >
-            <item.icon className={cn("flex-shrink-0", isCollapsed ? "w-6 h-6" : "w-5 h-5 mr-3")} />
+            <item.icon className={cn("shrink-0", isCollapsed ? "w-6 h-6" : "w-5 h-5 mr-3")} />
             {!isCollapsed && <span>{item.name}</span>}
           </NavLink>
         ))}
