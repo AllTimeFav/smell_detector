@@ -7,6 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from main import analyze_code
 import uvicorn
 
+import tree_sitter_cpp
+from tree_sitter import Language
+from refused_bequest_detector import build_symbol_table, run_refused_bequest_check
+from speculative_generality_detector import analyze_speculative_generality
+import zipfile
+import rarfile
+import io
+
 app = FastAPI(title="C++ Anti-Pattern Detector API")
 
 # Allow requests from the Vite React dev server (default port 5173)
@@ -18,13 +26,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-import tree_sitter_cpp
-from tree_sitter import Language
-from refused_bequest_detector import build_symbol_table, run_refused_bequest_check
-from speculative_generality_detector import analyze_speculative_generality
-import zipfile
-import rarfile
-import io
 
 @app.post("/api/analyze")
 async def analyze(files: List[UploadFile] = File(...)):
@@ -154,37 +155,7 @@ async def analyze(files: List[UploadFile] = File(...)):
     # Calculate mock health score
     score = max(0, 100 - (len(all_issues) * 5))
     
-    # Save to history
-    try:
-        history_file = "history.json"
-        history = []
-        if os.path.exists(history_file):
-            with open(history_file, 'r') as f:
-                history = json.load(f)
-        
-        history.append({
-            "id": len(history) + 1,
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "time": datetime.now().strftime("%H:%M"),
-            "files": files_analyzed,
-            "issues": len(all_issues),
-            "score": score
-        })
-        
-        with open(history_file, 'w') as f:
-            json.dump(history, f)
-    except Exception as e:
-        print(f"Failed to save history: {e}")
-
     return {"success": True, "files_analyzed": files_analyzed, "results": {"issues": all_issues}}
-
-@app.get("/api/history")
-def get_history():
-    history_file = "history.json"
-    if os.path.exists(history_file):
-        with open(history_file, 'r') as f:
-            return json.load(f)
-    return []
 
 if __name__ == '__main__':
     uvicorn.run("app:app", host="127.0.0.1", port=5000, reload=True)

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Activity, Layers, FileText, History, ShieldAlert, PanelLeftClose, PanelLeftOpen, HelpCircle } from 'lucide-react';
+import { LayoutDashboard, Activity, Layers, FileText, ShieldAlert, PanelLeftClose, PanelLeftOpen, HelpCircle } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
 const navItems = [
@@ -9,7 +9,6 @@ const navItems = [
   { name: 'Anti-Patterns', path: '/patterns', icon: Layers },
   { name: 'How It Works', path: '/how-it-works', icon: HelpCircle },
   { name: 'Reports', path: '/reports', icon: FileText },
-  { name: 'History', path: '/history', icon: History },
 ];
 
 export function Sidebar() {
