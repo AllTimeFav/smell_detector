@@ -1,18 +1,18 @@
 import os
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import json
 from datetime import datetime
 from typing import List
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from main import analyze_code
-import uvicorn
 
 import tree_sitter_cpp
 from tree_sitter import Language
 from refused_bequest_detector import build_symbol_table, run_refused_bequest_check
 from speculative_generality_detector import analyze_speculative_generality
 import zipfile
-import rarfile
 import io
 
 app = FastAPI(title="C++ Anti-Pattern Detector API")
@@ -158,4 +158,5 @@ async def analyze(files: List[UploadFile] = File(...)):
     return {"success": True, "files_analyzed": files_analyzed, "results": {"issues": all_issues}}
 
 if __name__ == '__main__':
-    uvicorn.run("app:app", host="127.0.0.1", port=5000, reload=True)
+    import uvicorn
+    uvicorn.run("index:app", host="127.0.0.1", port=5000, reload=True)
